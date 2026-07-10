@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="#0d1117">
+
+    <TextView
+        android:text="WiFi Saltamonte"
+        android:textSize="26sp"
+        android:textStyle="bold"
+        android:textColor="#58a6ff"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp"/>
+
+    <TextView
+        android:text="Selecciona la app de streaming y pulsa Lanzar"
+        android:textSize="13sp"
+        android:textColor="#8b949e"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"/>
+
+    <TextView
+        android:id="@+id/tvSelected"
+        android:text="Ninguna app seleccionada"
+        android:textSize="15sp"
+        android:textColor="#f0f6fc"
+        android:padding="10dp"
+        android:background="#161b22"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"/>
+
+    <Button
+        android:id="@+id/btnLaunch"
+        android:text="LANZAR APP + SALTAR ACTUALIZACIÓN"
+        android:enabled="false"
+        android:textSize="14sp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"/>
+
+    <TextView
+        android:id="@+id/tvInfo"
+        android:text=""
+        android:textSize="13sp"
+        android:textColor="#3fb950"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"/>
+
+    <TextView
+        android:text="Apps instaladas (toca para seleccionar):"
+        android:textSize="13sp"
+        android:textColor="#8b949e"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"/>
+
+    <ListView
+        android:id="@+id/listApps"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="#21262d"
+        android:dividerHeight="1dp"/>
+
+</LinearLayout>

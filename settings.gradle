@@ -1,0 +1,2 @@
+rootProject.name = "WifiSaltamonte"
+include ':app'
