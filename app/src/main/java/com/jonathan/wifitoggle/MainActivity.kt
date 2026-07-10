@@ -74,19 +74,36 @@ class MainActivity : AppCompatActivity() {
 
     private fun launchApp() {
         val pkg = selectedPackage ?: return
-        val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
-        if (launchIntent == null) {
-            Toast.makeText(this, "No se puede abrir esta app", Toast.LENGTH_SHORT).show()
+        val intent = resolveIntent(pkg)
+        if (intent == null) {
+            Toast.makeText(this, "No se encontró cómo abrir $pkg", Toast.LENGTH_LONG).show()
             return
         }
 
-        // Inicia el servicio que hace el salto WiFi
         WifiToggleService.start(this)
-
-        // Abre la app de streaming
-        startActivity(launchIntent)
-
+        startActivity(intent)
         tvInfo.text = "Servicio activo — mira la notificación para el conteo"
+    }
+
+    private fun resolveIntent(pkg: String): android.content.Intent? {
+        // 1. Intento estándar (móvil)
+        packageManager.getLaunchIntentForPackage(pkg)?.let { return it }
+
+        // 2. Intento Leanback (TV)
+        packageManager.getLeanbackLaunchIntentForPackage(pkg)?.let { return it }
+
+        // 3. Busca cualquier actividad MAIN del package
+        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+        intent.setPackage(pkg)
+        val resolved = packageManager.queryIntentActivities(intent, 0)
+        if (resolved.isNotEmpty()) {
+            val act = resolved[0].activityInfo
+            return android.content.Intent().apply {
+                setClassName(act.packageName, act.name)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+        return null
     }
 }
 
