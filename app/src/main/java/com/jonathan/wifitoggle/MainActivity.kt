@@ -1,6 +1,8 @@
 package com.jonathan.wifitoggle
 
+import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -34,12 +36,23 @@ class MainActivity : AppCompatActivity() {
         refreshSelectedLabel()
         loadApps()
 
+        // Toque corto = seleccionar
         listView.setOnItemClickListener { _, _, position, _ ->
             val app = apps[position]
             selectedPackage = app.packageName
             prefs.edit().putString("pkg", selectedPackage).apply()
             refreshSelectedLabel()
-            Toast.makeText(this, "Seleccionado: ${packageManager.getApplicationLabel(app)}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Seleccionado. Presiona LANZAR.", Toast.LENGTH_SHORT).show()
+        }
+
+        // Toque largo = seleccionar Y lanzar de inmediato
+        listView.setOnItemLongClickListener { _, _, position, _ ->
+            val app = apps[position]
+            selectedPackage = app.packageName
+            prefs.edit().putString("pkg", selectedPackage).apply()
+            refreshSelectedLabel()
+            launchApp()
+            true
         }
 
         btnLaunch.setOnClickListener { launchApp() }
@@ -53,11 +66,12 @@ class MainActivity : AppCompatActivity() {
             .sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
 
         listView.adapter = AppAdapter(this, apps)
+        tvInfo.text = "${apps.size} apps encontradas"
     }
 
     private fun refreshSelectedLabel() {
         if (selectedPackage == null) {
-            tvSelected.text = "Ninguna app seleccionada — toca una de la lista"
+            tvSelected.text = "Ninguna app seleccionada"
             btnLaunch.isEnabled = false
             return
         }
@@ -67,42 +81,106 @@ class MainActivity : AppCompatActivity() {
             tvSelected.text = "App: $name"
             btnLaunch.isEnabled = true
         } catch (e: PackageManager.NameNotFoundException) {
-            tvSelected.text = "App no encontrada — selecciona otra"
+            tvSelected.text = "App no encontrada"
             btnLaunch.isEnabled = false
         }
     }
 
     private fun launchApp() {
         val pkg = selectedPackage ?: return
-        val intent = resolveIntent(pkg)
+        val log = StringBuilder()
+
+        val intent = resolveIntent(pkg, log)
+
         if (intent == null) {
-            Toast.makeText(this, "No se encontró cómo abrir $pkg", Toast.LENGTH_LONG).show()
+            // Muestra debug para saber qué pasó
+            try {
+                val acts = packageManager.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES)
+                    ?.activities?.map { it.name } ?: emptyList()
+                log.append("\nActividades en el package:\n${acts.joinToString("\n")}")
+            } catch (e: Exception) {
+                log.append("\nError leyendo actividades: ${e.message}")
+            }
+            AlertDialog.Builder(this)
+                .setTitle("No se pudo abrir la app")
+                .setMessage("Package: $pkg\n\n$log")
+                .setPositiveButton("OK", null)
+                .show()
             return
         }
 
         WifiToggleService.start(this)
-        startActivity(intent)
-        tvInfo.text = "Servicio activo — mira la notificación para el conteo"
+        try {
+            startActivity(intent)
+            tvInfo.text = "Lanzado. Mira la notificación para el conteo WiFi."
+        } catch (e: Exception) {
+            AlertDialog.Builder(this)
+                .setTitle("Error al lanzar")
+                .setMessage("Intent: ${intent.component}\nError: ${e.message}")
+                .setPositiveButton("OK", null)
+                .show()
+        }
     }
 
-    private fun resolveIntent(pkg: String): android.content.Intent? {
-        // 1. Intento estándar (móvil)
-        packageManager.getLaunchIntentForPackage(pkg)?.let { return it }
+    private fun resolveIntent(pkg: String, log: StringBuilder): Intent? {
+        // 1. Standard launcher intent
+        val standard = packageManager.getLaunchIntentForPackage(pkg)
+        log.append("1. getLaunchIntentForPackage: ${if (standard != null) "OK" else "null"}\n")
+        if (standard != null) {
+            standard.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            return standard
+        }
 
-        // 2. Intento Leanback (TV)
-        packageManager.getLeanbackLaunchIntentForPackage(pkg)?.let { return it }
+        // 2. Leanback (Android TV)
+        val leanback = packageManager.getLeanbackLaunchIntentForPackage(pkg)
+        log.append("2. getLeanbackLaunchIntent: ${if (leanback != null) "OK" else "null"}\n")
+        if (leanback != null) {
+            leanback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            return leanback
+        }
 
-        // 3. Busca cualquier actividad MAIN del package
-        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
-        intent.setPackage(pkg)
-        val resolved = packageManager.queryIntentActivities(intent, 0)
-        if (resolved.isNotEmpty()) {
-            val act = resolved[0].activityInfo
-            return android.content.Intent().apply {
+        // 3. MAIN + LAUNCHER category
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+            setPackage(pkg)
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val launcherResults = packageManager.queryIntentActivities(launcherIntent, 0)
+        log.append("3. MAIN+LAUNCHER: ${launcherResults.size} resultados\n")
+        if (launcherResults.isNotEmpty()) {
+            val act = launcherResults[0].activityInfo
+            return Intent().apply {
                 setClassName(act.packageName, act.name)
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
         }
+
+        // 4. MAIN + LEANBACK_LAUNCHER category
+        val leanbackIntent = Intent(Intent.ACTION_MAIN).apply {
+            setPackage(pkg)
+            addCategory("android.intent.category.LEANBACK_LAUNCHER")
+        }
+        val leanbackResults = packageManager.queryIntentActivities(leanbackIntent, 0)
+        log.append("4. MAIN+LEANBACK_LAUNCHER: ${leanbackResults.size} resultados\n")
+        if (leanbackResults.isNotEmpty()) {
+            val act = leanbackResults[0].activityInfo
+            return Intent().apply {
+                setClassName(act.packageName, act.name)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+
+        // 5. Cualquier actividad MAIN sin categoría
+        val anyMain = Intent(Intent.ACTION_MAIN).setPackage(pkg)
+        val anyResults = packageManager.queryIntentActivities(anyMain, 0)
+        log.append("5. MAIN (sin categoría): ${anyResults.size} resultados\n")
+        if (anyResults.isNotEmpty()) {
+            val act = anyResults[0].activityInfo
+            return Intent().apply {
+                setClassName(act.packageName, act.name)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+
         return null
     }
 }
