@@ -12,9 +12,7 @@ class WifiToggleService : Service() {
     companion object {
         const val CHANNEL_ID = "wifi_toggle_channel"
         const val NOTIF_ID = 42
-        // 20 segundos para que aparezca el popup de actualización
         const val DELAY_BEFORE_OFF = 20
-        // 10 segundos sin WiFi para que el popup falle y se cierre
         const val WIFI_OFF_DURATION = 10L
 
         fun start(context: Context) {
@@ -39,7 +37,7 @@ class WifiToggleService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIF_ID, buildNotif("Preparando salto... $DELAY_BEFORE_OFF s"))
+        startForeground(NOTIF_ID, buildNotif("Iniciando... Android ${Build.VERSION.SDK_INT}"))
         startCountdown(DELAY_BEFORE_OFF)
         return START_NOT_STICKY
     }
@@ -49,29 +47,62 @@ class WifiToggleService : Service() {
             disableWifi()
             return
         }
-        updateNotif("Salto en $remaining s...")
+        updateNotif("Salto en $remaining s... (Android ${Build.VERSION.SDK_INT})")
         handler.postDelayed({ startCountdown(remaining - 1) }, 1000)
     }
 
-    @Suppress("DEPRECATION")
     private fun disableWifi() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            updateNotif("Android 10+: no se puede desactivar WiFi sin root")
-            handler.postDelayed({ stopSelf() }, 4000)
-            return
+        updateNotif("Desactivando WiFi...")
+        Thread {
+            val ok = tryDisable()
+            handler.post {
+                if (!ok) {
+                    updateNotif("FALLO: no se pudo desactivar WiFi\nAndroid ${Build.VERSION.SDK_INT} - sin root?")
+                    handler.postDelayed({ stopSelf() }, 5000)
+                    return@post
+                }
+                updateNotif("WiFi OFF — esquivando actualización...")
+                handler.postDelayed({
+                    Thread {
+                        tryEnable()
+                        handler.post {
+                            updateNotif("WiFi reactivado ✓ — listo!")
+                            handler.postDelayed({ stopSelf() }, 3000)
+                        }
+                    }.start()
+                }, WIFI_OFF_DURATION * 1000)
+            }
+        }.start()
+    }
+
+    private fun tryDisable(): Boolean {
+        // Método 1: API estándar (Android 9 / API 28 y menor)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            @Suppress("DEPRECATION")
+            wifiManager.setWifiEnabled(false)
+            Thread.sleep(1000)
+            if (!wifiManager.isWifiEnabled) return true
         }
 
-        updateNotif("WiFi OFF — esquivando actualización...")
-        wifiManager.setWifiEnabled(false)
+        // Método 2: Root (funciona en Android 10+ si el TV box tiene root)
+        return try {
+            Runtime.getRuntime().exec(arrayOf("su", "-c", "svc wifi disable")).waitFor()
+            Thread.sleep(1500)
+            !wifiManager.isWifiEnabled
+        } catch (e: Exception) {
+            false
+        }
+    }
 
-        handler.postDelayed({
-            updateNotif("Reactivando WiFi...")
+    private fun tryEnable() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            @Suppress("DEPRECATION")
             wifiManager.setWifiEnabled(true)
-            handler.postDelayed({
-                updateNotif("Listo — actualizacion esquivada ✓")
-                handler.postDelayed({ stopSelf() }, 3000)
-            }, 2000)
-        }, WIFI_OFF_DURATION * 1000)
+        } else {
+            try {
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "svc wifi enable")).waitFor()
+            } catch (_: Exception) {}
+        }
     }
 
     private fun createChannel() {
@@ -85,6 +116,7 @@ class WifiToggleService : Service() {
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("WiFi Saltamonte")
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
