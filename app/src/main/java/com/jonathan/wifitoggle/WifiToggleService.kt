@@ -12,7 +12,7 @@ class WifiToggleService : Service() {
     companion object {
         const val CHANNEL_ID = "wifi_toggle_channel"
         const val NOTIF_ID = 42
-        const val DELAY_BEFORE_OFF = 20
+        const val DELAY_BEFORE_OFF = 15
         const val WIFI_OFF_DURATION = 40L
 
         fun start(context: Context) {
