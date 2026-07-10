@@ -36,16 +36,16 @@ class MainActivity : AppCompatActivity() {
         refreshSelectedLabel()
         loadApps()
 
-        // Toque corto = seleccionar
+        // Un solo click = seleccionar Y lanzar directamente
         listView.setOnItemClickListener { _, _, position, _ ->
             val app = apps[position]
             selectedPackage = app.packageName
             prefs.edit().putString("pkg", selectedPackage).apply()
             refreshSelectedLabel()
-            Toast.makeText(this, "Seleccionado. Presiona LANZAR.", Toast.LENGTH_SHORT).show()
+            launchApp()
         }
 
-        // Toque largo = seleccionar Y lanzar de inmediato
+        // Toque largo = mismo comportamiento
         listView.setOnItemLongClickListener { _, _, position, _ ->
             val app = apps[position]
             selectedPackage = app.packageName
