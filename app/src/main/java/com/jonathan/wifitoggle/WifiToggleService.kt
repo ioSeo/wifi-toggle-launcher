@@ -76,7 +76,7 @@ class WifiToggleService : Service() {
     }
 
     private fun tryDisable(): Boolean {
-        // Método 1: API estándar (Android 9 / API 28 y menor)
+        // Método 1: API estándar (Android 9-)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             @Suppress("DEPRECATION")
             wifiManager.setWifiEnabled(false)
@@ -84,25 +84,48 @@ class WifiToggleService : Service() {
             if (!wifiManager.isWifiEnabled) return true
         }
 
-        // Método 2: Root (funciona en Android 10+ si el TV box tiene root)
-        return try {
+        // Método 2: svc sin root (funciona en muchos TV box)
+        try {
+            Runtime.getRuntime().exec(arrayOf("svc", "wifi", "disable")).waitFor()
+            Thread.sleep(1500)
+            if (!wifiManager.isWifiEnabled) return true
+        } catch (_: Exception) {}
+
+        // Método 3: su root clásico
+        try {
             Runtime.getRuntime().exec(arrayOf("su", "-c", "svc wifi disable")).waitFor()
             Thread.sleep(1500)
-            !wifiManager.isWifiEnabled
-        } catch (e: Exception) {
-            false
-        }
+            if (!wifiManager.isWifiEnabled) return true
+        } catch (_: Exception) {}
+
+        // Método 4: su root alternativo
+        try {
+            val p = Runtime.getRuntime().exec("su")
+            p.outputStream.write("svc wifi disable\nexit\n".toByteArray())
+            p.outputStream.flush()
+            p.waitFor()
+            Thread.sleep(1500)
+            if (!wifiManager.isWifiEnabled) return true
+        } catch (_: Exception) {}
+
+        return false
     }
 
     private fun tryEnable() {
+        // Mismos métodos para reactivar
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             @Suppress("DEPRECATION")
             wifiManager.setWifiEnabled(true)
-        } else {
-            try {
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "svc wifi enable")).waitFor()
-            } catch (_: Exception) {}
+            return
         }
+        try { Runtime.getRuntime().exec(arrayOf("svc", "wifi", "enable")).waitFor() } catch (_: Exception) {}
+        try { Runtime.getRuntime().exec(arrayOf("su", "-c", "svc wifi enable")).waitFor() } catch (_: Exception) {}
+        try {
+            val p = Runtime.getRuntime().exec("su")
+            p.outputStream.write("svc wifi enable\nexit\n".toByteArray())
+            p.outputStream.flush()
+            p.waitFor()
+        } catch (_: Exception) {}
     }
 
     private fun createChannel() {

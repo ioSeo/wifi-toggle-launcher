@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.*
 import android.view.*
@@ -17,7 +18,10 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val DELAY_BEFORE_OFF_MS = 15_000L
         const val WIFI_OFF_DURATION_MS = 40_000L
+        const val REQUEST_VPN = 1001
     }
+
+    private var pendingLaunchIntent: Intent? = null
 
     private lateinit var prefs: SharedPreferences
     private lateinit var wifiManager: WifiManager
@@ -105,37 +109,38 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        try {
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-            return
+        // Pedir permiso VPN (sólo la primera vez aparece el diálogo del sistema)
+        val vpnIntent = VpnService.prepare(this)
+        if (vpnIntent != null) {
+            pendingLaunchIntent = intent
+            startActivityForResult(vpnIntent, REQUEST_VPN)
+        } else {
+            doLaunch(intent)
         }
+    }
 
-        tvInfo.text = "Abierta. WiFi se apaga en ${DELAY_BEFORE_OFF_MS/1000}s..."
-        Toast.makeText(this, "WiFi se apaga en ${DELAY_BEFORE_OFF_MS/1000}s", Toast.LENGTH_LONG).show()
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_VPN && resultCode == RESULT_OK) {
+            pendingLaunchIntent?.let { doLaunch(it) }
+            pendingLaunchIntent = null
+        }
+    }
 
-        // Hilo background — sobrevive aunque la Activity quede en segundo plano
-        Thread {
-            Thread.sleep(DELAY_BEFORE_OFF_MS)
+    private fun doLaunch(intent: Intent) {
+        // Activa el VPN bloqueante ANTES de abrir la app
+        startService(Intent(this, BlockingVpnService::class.java))
+        Toast.makeText(this, "VPN activo — bloqueando actualización 25s", Toast.LENGTH_LONG).show()
+        tvInfo.text = "VPN activo por 25s, luego streaming normal"
 
-            val disabled = tryDisableWifi()
-            handler.post {
-                if (disabled) {
-                    Toast.makeText(this, "WiFi OFF — saltando actualización...", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this, "FALLO: no se pudo desactivar WiFi (Android ${Build.VERSION.SDK_INT})", Toast.LENGTH_LONG).show()
-                }
+        // Abre la app de streaming después de 1 segundo (VPN ya activo)
+        handler.postDelayed({
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
             }
-
-            if (disabled) {
-                Thread.sleep(WIFI_OFF_DURATION_MS)
-                tryEnableWifi()
-                handler.post {
-                    Toast.makeText(this, "WiFi reactivado ✓", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }.start()
+        }, 1000)
     }
 
     private fun tryDisableWifi(): Boolean {
